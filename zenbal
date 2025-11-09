@@ -3,6 +3,8 @@
 
 set -euo pipefail
 
+ZEN_DIR_SCRIPT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 ######################################################
 ## Constants and other Environment Variable Names
 ######################################################
@@ -2879,6 +2881,7 @@ zen_environment_info() {
     zen_echo_success "Running on $ZEN_OS_NAME ($ZEN_OS_KERNEL kernel, $ZEN_OS_MACHINE_HARDWARE_NAME architecture)."
     zen_echo_success "Distribution: $ZEN_OS_DISTRO_CODENAME ($ZEN_OS_DISTRO_ID v$ZEN_OS_RELEASE) based on $ZEN_OS_BASED_ON."
     zen_echo_success "Package management will use $ZEN_OS_BASED_ON compatible tools."
+    zen_echo_success "Script directory: $ZEN_DIR_SCRIPT"
     echo ""
 }
 
