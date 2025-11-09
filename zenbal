@@ -166,7 +166,7 @@ zen_string_explode() {
 # Returns:
 #   Lowercase version of input string (in ZEN_FUNC_RESULT)
 zen_string_lower() {
-    ZEN_FUNC_RESULT=$(echo "$1" | tr -s "[:upper:]" "[:lower:]")
+    ZEN_FUNC_RESULT=$(echo "$1" | tr "[:upper:]" "[:lower:]")
 }
 
 # Convert string to uppercase
@@ -179,7 +179,7 @@ zen_string_lower() {
 # Returns:
 #   Uppercase version of input string (in ZEN_FUNC_RESULT)
 zen_string_upper() {
-    ZEN_FUNC_RESULT=$(echo "$1" | tr -s "[:upper:]" "[:lower:]")
+    ZEN_FUNC_RESULT=$(echo "$1" | tr "[:lower:]" "[:upper:]")
 }
 
 # Replace all occurrences of substring in string
@@ -202,14 +202,23 @@ zen_string_replace_all() {
 ##====================================================
 
 # Generates a uniformly-distributed unsigned 30-bit integer in the specified interval
+# Globals:
+#   ZEN_FUNC_RESULT - Contains the generated random integer
+# Arguments:
+#   1 - Upper bound (exclusive) or lower bound if arg 2 provided (optional)
+#   2 - Upper bound (exclusive) when arg 1 is lower bound (optional)
+# Outputs:
+#   None
+# Returns:
+#   Random integer: [0, 2^30) if no args, [0, arg1) if 1 arg, [arg1, arg2) if 2 args
 zen_random_int30() {
-    if [ -z "$1" ]; then
+    if [ -z "${1:-}" ]; then
         ZEN_FUNC_RESULT=$(( (RANDOM<<15)|RANDOM ))
     else
-        if [ -z "$2" ]; then
-            ZEN_FUNC_RESULT=$(( ((RANDOM<<15)|RANDOM) % "$1" + 0 ))
+        if [ -z "${2:-}" ]; then
+            ZEN_FUNC_RESULT=$(( ((RANDOM<<15)|RANDOM) % $1 ))
         else
-            ZEN_FUNC_RESULT=$(( ((RANDOM<<15)|RANDOM) % "$2" + "$1" ))
+            ZEN_FUNC_RESULT=$(( ((RANDOM<<15)|RANDOM) % ($2 - $1) + $1 ))
         fi
     fi
 }
@@ -226,7 +235,17 @@ zen_random_int30() {
 # Returns:
 #   The string generated
 zen_random_string() {
-    ZEN_FUNC_RESULT=$(cat /dev/urandom | tr -dc "$1" | fold -w "$2" | head -n 1)
+    local charset="$1"
+    local length="$2"
+    local result=""
+    local charset_len=${#charset}
+    
+    for ((i=0; i<length; i++)); do
+        local rand_index=$((RANDOM % charset_len))
+        result="${result}${charset:rand_index:1}"
+    done
+    
+    ZEN_FUNC_RESULT="$result"
 }
 
 # Generates a random alphanumeric string.
@@ -239,7 +258,7 @@ zen_random_string() {
 # Returns:
 #   The string generated
 zen_random_alphanumeric() {
-    zen_random_string 'a-zA-Z0-9' "$1"
+    zen_random_string 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' "$1"
 }
 
 # Generates a random lowercase alphanumeric string.
@@ -252,7 +271,7 @@ zen_random_alphanumeric() {
 # Returns:
 #   The string generated
 zen_random_lowercase_alphanumeric() {
-    zen_random_string 'a-z0-9' "$1"
+    zen_random_string 'abcdefghijklmnopqrstuvwxyz0123456789' "$1"
 }
 
 # Generates a random lowercase alpha string
@@ -265,7 +284,7 @@ zen_random_lowercase_alphanumeric() {
 # Returns:
 #   The string generated
 zen_random_lowercase_alpha() {
-    zen_random_string 'a-z' "$1"
+    zen_random_string 'abcdefghijklmnopqrstuvwxyz' "$1"
 }
 
 # Generates a random uppercase alphanumeric string
@@ -278,7 +297,7 @@ zen_random_lowercase_alpha() {
 # Returns:
 #   The string generated
 zen_random_uppercase_alphanumeric() {
-    zen_random_string 'A-Z0-9' "$1"
+    zen_random_string 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' "$1"
 }
 
 # Generates a random uppercase alpha string
@@ -291,7 +310,7 @@ zen_random_uppercase_alphanumeric() {
 # Returns:
 #   The string generated
 zen_random_uppercase_alpha() {
-    zen_random_string 'A-Z' "$1"
+    zen_random_string 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' "$1"
 }
 
 # Generates a random string containing a unique (time based) numeric value
@@ -323,10 +342,10 @@ gen_random_string_time_based() {
 # Returns:
 #   Sets ZEN_PATH_TMP global variable
 zen_file_setup_path_tmp() {
-    if [[ -z "$ZEN_PATH_TMP" ]]; then
+    if [[ -z "${ZEN_PATH_TMP_PREFIX:-}" ]]; then
         ZEN_PATH_TMP_PREFIX="zen"
     fi
-    if [[ -z "$ZEN_PATH_TMP" ]]; then
+    if [[ -z "${ZEN_PATH_TMP:-}" ]]; then
         ZEN_PATH_TMP=$(mktemp -d -t "${ZEN_PATH_TMP_PREFIX}-XXXXXXXXXX")
     fi
     if [[ ! -d "$ZEN_PATH_TMP" ]]; then
@@ -951,11 +970,17 @@ zen_ensure_command() {
         return 0
     fi
 
+    # Check if auto-installation is enabled
+    if [[ "${ZEN_AUTOINSTALL_MISSING_PACKAGES:-}" != "true" ]]; then
+        zen_echo_panic "$l_display_name is not installed and auto-installation is disabled. " \
+                       "Please install it manually or set ZEN_AUTOINSTALL_MISSING_PACKAGES=true"
+    fi
+
     zen_pkg_provides_command "$l_cmd"
     if [[ -z "$ZEN_FUNC_RESULT" ]]; then
         zen_echo_panic "$l_display_name is not installed and " \
-        "I can't find a package that provides it. " \
-        "Please install it manually."
+                       "I can't find a package that provides it. " \
+                       "Please install it manually."
     fi
     zen_pkg_install "$ZEN_FUNC_RESULT"
 }
@@ -1039,7 +1064,8 @@ zen_ensure_asdf_plugin() {
   local l_display_name="${4:-$l_plugin}"
 
   if [[ -z "$l_plugin" ]]; then
-    zen_echo_panic "Usage: zen_ensure_asdf_plugin <plugin_name> [version] [set_default] [display_name]"
+    zen_echo_panic "Usage: zen_ensure_asdf_plugin <plugin_name> [version] [set_default] " \
+                   "[display_name]"
   fi
 
   # Ensure asdf is available
@@ -1079,7 +1105,8 @@ zen_ensure_asdf_plugin() {
   if [[ "$l_default" == "true" ]]; then
     if asdf help 2>/dev/null | grep -qw set; then
       if asdf set --home "$l_plugin" "$l_version"; then
-        zen_echo_success "Set $l_display_name user default version to $l_version (using: asdf set --home)"
+        zen_echo_success "Set $l_display_name user default version to $l_version " \
+                         "(using: asdf set --home)"
       else
         zen_echo_error "Failed to set $l_display_name version with 'asdf set --home'."
         return 1
@@ -1095,44 +1122,63 @@ zen_ensure_asdf_plugin() {
 ## zen_pkg
 ##====================================================
 
+# Upgrade all installed packages on the system
+# Uses OS-specific package managers to update packages
+# Globals:
+#   None
+# Arguments:
+#   None
+# Outputs:
+#   Package manager upgrade output
+# Returns:
+#   Exit code from package manager upgrade command
 zen_pkg_upgrade() {
     zen_os_function "_zen_pkg_upgrade"
 }
 
+# Upgrade packages on Debian-based systems (Debian, Ubuntu, etc.)
 _zen_pkg_upgrade_debian() {
     sudo apt-get update
     sudo apt-get upgrade -y
 }
 
+# Upgrade packages on Red Hat-based systems (RHEL, CentOS, Fedora, etc.)
 _zen_pkg_upgrade_redhat() {
     sudo yum update -y
 }
 
+# Upgrade packages on openSUSE systems
 _zen_pkg_upgrade_suse() {
     sudo zypper update -y
 }
 
+# Upgrade packages on Mandriva/Mageia systems
 _zen_pkg_upgrade_mandrake() {
     sudo urpmi --auto-select
 }
 
+# Upgrade packages on macOS using Homebrew
 _zen_pkg_upgrade_macos() {
     if command -v brew >/dev/null 2>&1; then
         brew update
         brew upgrade
     else
-        zen_echo_panic "Homebrew is not installed! Please install Homebrew package manager first."
+        zen_echo_panic "Homebrew is not installed! " \
+                       "Please install Homebrew package manager first."
     fi
 }
 
+# Upgrade packages on Arch Linux systems
 _zen_pkg_upgrade_arch() {
     if command -v pacman >/dev/null 2>&1; then
         sudo pacman -Syu --noconfirm
     else
-        zen_echo_panic "pacman is not available! This function requires Arch Linux or compatible system."
+        zen_echo_panic "pacman is not available! " \
+                       "This function requires Arch Linux or compatible system."
     fi
 }
 
+# Upgrade packages on Alpine Linux systems
 _zen_pkg_upgrade_alpine() {
     if command -v apk >/dev/null 2>&1; then
         sudo apk update
@@ -1142,55 +1188,66 @@ _zen_pkg_upgrade_alpine() {
     fi
 }
 
+# Upgrade packages on Gentoo Linux systems
 _zen_pkg_upgrade_gentoo() {
     if command -v emerge >/dev/null 2>&1; then
         sudo emerge --sync
         sudo emerge -uDN @world
     else
-        zen_echo_panic "emerge is not available! This function requires Gentoo Linux."
+        zen_echo_panic "emerge is not available! " \
+                       "This function requires Gentoo Linux."
     fi
 }
 
+# Upgrade packages on Void Linux systems
 _zen_pkg_upgrade_void() {
     if command -v xbps-install >/dev/null 2>&1; then
         sudo xbps-install -Su
     else
-        zen_echo_panic "xbps-install is not available! This function requires Void Linux."
+        zen_echo_panic "xbps-install is not available! " \
+                       "This function requires Void Linux."
     fi
 }
 
+# Upgrade packages on NixOS systems
 _zen_pkg_upgrade_nixos() {
     if command -v nixos-rebuild >/dev/null 2>&1; then
         sudo nixos-rebuild switch --upgrade
     elif command -v nix-env >/dev/null 2>&1; then
         nix-env -u '*'
     else
-        zen_echo_panic "nixos-rebuild or nix-env are not available! This function requires NixOS or Nix package manager."
+        zen_echo_panic "nixos-rebuild or nix-env are not available! " \
+        "This function requires NixOS or Nix package manager."
     fi
 }
 
-_zen_pkg_upgrade_linux() {
-    _zen_pkg_upgrade_panic_message
-}
-
+# Fallback function for unknown/unsupported operating systems
 _zen_pkg_upgrade_unknown() {
-    _zen_pkg_upgrade_panic_message
-}
-
-_zen_pkg_upgrade_panic_message() {
     zen_echo_warning "Unknown OS - unable to determine upgrade method."
     zen_echo_panic "Please upgrade packages manually using your system's package manager."
 }
 
+# Install a package using the system's package manager
+# Uses OS-specific package managers to install the specified package
+# Globals:
+#   None
+# Arguments:
+#   1 - Package name to install (required)
+# Outputs:
+#   Package manager installation output
+# Returns:
+#   Exit code from package manager install command
 zen_pkg_install() {
     zen_os_function "_zen_pkg_install" "$1"
 }
 
+# Install packages on Debian-based systems (Debian, Ubuntu, etc.)
 _zen_pkg_install_debian() {
     sudo apt-get update
     sudo apt-get install "$1" -y
 }
 
+# Install packages on Red Hat-based systems (RHEL, CentOS, Fedora, etc.)
 _zen_pkg_install_redhat() {
     if command -v dnf >/dev/null 2>&1; then
         sudo dnf install "$1" -y
@@ -1201,6 +1258,7 @@ _zen_pkg_install_redhat() {
     fi
 }
 
+# Install packages on openSUSE systems
 _zen_pkg_install_suse() {
     if command -v zypper >/dev/null 2>&1; then
         sudo zypper install -y "$1"
@@ -1209,6 +1267,7 @@ _zen_pkg_install_suse() {
     fi
 }
 
+# Install packages on Mandriva/Mageia systems
 _zen_pkg_install_mandrake() {
     if command -v urpmi >/dev/null 2>&1; then
         sudo urpmi "$1"
@@ -1217,6 +1276,7 @@ _zen_pkg_install_mandrake() {
     fi
 }
 
+# Install packages on macOS using Homebrew
 _zen_pkg_install_macos() {
     if command -v brew >/dev/null 2>&1; then
         # Check if it's a cask package (GUI applications)
@@ -1226,10 +1286,12 @@ _zen_pkg_install_macos() {
             brew install "$1"
         fi
     else
-        zen_echo_panic "Homebrew is not installed! Please install Homebrew package manager first."
+        zen_echo_panic "Homebrew is not installed! " \
+                       "Please install Homebrew package manager first."
     fi
 }
 
+# Install packages on Arch Linux systems
 _zen_pkg_install_arch() {
     if command -v pacman >/dev/null 2>&1; then
         sudo pacman -S --noconfirm "$1"
@@ -1238,6 +1300,7 @@ _zen_pkg_install_arch() {
     fi
 }
 
+# Install packages on Alpine Linux systems
 _zen_pkg_install_alpine() {
     if command -v apk >/dev/null 2>&1; then
         sudo apk add "$1"
@@ -1246,6 +1309,7 @@ _zen_pkg_install_alpine() {
     fi
 }
 
+# Install packages on Gentoo Linux systems
 _zen_pkg_install_gentoo() {
     if command -v emerge >/dev/null 2>&1; then
         sudo emerge "$1"
@@ -1254,6 +1318,7 @@ _zen_pkg_install_gentoo() {
     fi
 }
 
+# Install packages on Void Linux systems
 _zen_pkg_install_void() {
     if command -v xbps-install >/dev/null 2>&1; then
         sudo xbps-install -S "$1"
@@ -1262,6 +1327,7 @@ _zen_pkg_install_void() {
     fi
 }
 
+# Install packages on NixOS systems
 _zen_pkg_install_nixos() {
     if command -v nix-env >/dev/null 2>&1; then
         nix-env -i "$1"
@@ -1270,15 +1336,8 @@ _zen_pkg_install_nixos() {
     fi
 }
 
-_zen_pkg_install_linux() {
-    _zen_pkg_install_panic_message
-}
-
+# Fallback function for unknown/unsupported operating systems
 _zen_pkg_install_unknown() {
-    _zen_pkg_install_panic_message
-}
-
-_zen_pkg_install_panic_message() {
     zen_echo_warning "Unknown OS - unable to determine installation method."
     zen_echo_panic "Please install packages manually using your system's package manager."
 }
@@ -2622,6 +2681,7 @@ _zen_pkg_init_macos() {
     zen_map_set "_zen_pkg_by_command" "keychain" "keychain"
 }
 
+# Fallback package initialization for unknown/unsupported operating systems
 _zen_pkg_init_unknown() {
     zen_echo_warning "Package initialization for unknown OS is not supported. " \
     "zen_pkg_upgrade and zen_pkg_install functions " \
@@ -2634,7 +2694,7 @@ _zen_pkg_init_unknown() {
 
 # Call OS-specific function based on detected environment
 # Constructs function name by appending "_$ZEN_OS_BASED_ON" to the base function name
-# and calls it if it exists, otherwise exits with panic
+# and calls it if it exists, otherwise falls back to "_unknown" variant
 # Globals:
 #   ZEN_OS_BASED_ON - Detected OS base (debian, redhat, suse, mandrake, macos, etc.)
 # Arguments:
@@ -2644,25 +2704,50 @@ _zen_pkg_init_unknown() {
 #   Calls the OS-specific function or displays panic message
 # Returns:
 #   Returns value from OS-specific function, or exits on error
+# Example:
+#   zen_os_function "_zen_pkg_install" "curl"  # Calls _zen_pkg_install_debian "curl" on Debian systems
 zen_os_function() {
     local l_base_function="$1"
     local l_os_function="${l_base_function}_${ZEN_OS_BASED_ON}"
+    local l_os_function_unknown="${l_base_function}_unknown"
     
     if [ -z "$l_base_function" ]; then
         zen_echo_panic "zen_os_function: Base function name is required"
     fi
     
-    # Check if the OS-specific function exists
+    # Check if the OS-specific function exists (e.g., _zen_pkg_install_debian)
     if declare -f "$l_os_function" >/dev/null 2>&1; then
         # Shift first argument (base function name) and pass remaining args
         shift
         "$l_os_function" "$@"
+        return 0
+    fi
+    
+    # Fallback to unknown OS variant if OS-specific function doesn't exist
+    if declare -f "$l_os_function_unknown" >/dev/null 2>&1; then
+        shift
+        "$l_os_function_unknown" "$@"
     else
-        zen_echo_panic "Function '$l_os_function' does not exist for OS based on '$ZEN_OS_BASED_ON'"
+        zen_echo_panic "Function '$l_os_function_unknown' does not exist!"
     fi
 }
 
-# Detect OS
+# Detect operating system and set global variables with OS information
+# Probes various system files and commands to determine OS type, distribution, and version
+# Globals:
+#   ZEN_OS_NAME - OS name (linux, darwin, etc.)
+#   ZEN_OS_KERNEL - Kernel version string
+#   ZEN_OS_MACHINE_HARDWARE_NAME - Hardware architecture (x86_64, arm64, etc.)
+#   ZEN_OS_BASED_ON - Base OS family (debian, redhat, suse, arch, alpine, gentoo, void, nixos, macos, unknown)
+#   ZEN_OS_DISTRO_ID - Distribution identifier (ubuntu, fedora, arch, etc.)
+#   ZEN_OS_DISTRO_CODENAME - Human-readable distribution name
+#   ZEN_OS_RELEASE - Version/release number
+# Arguments:
+#   None
+# Outputs:
+#   None
+# Returns:
+#   Sets global variables with detected OS information
 _zen_os_detect() {
     zen_string_lower $(uname)
     ZEN_OS_NAME=$ZEN_FUNC_RESULT
@@ -2761,93 +2846,57 @@ _zen_os_detect() {
             ZEN_OS_RELEASE=$(sw_vers -productVersion)
             ZEN_OS_DISTRO_CODENAME=$(sw_vers -productName)
         else
+            ZEN_OS_DISTRO_CODENAME="macOS"
             # Fallback to system_profiler if sw_vers is not available
             if command -v system_profiler >/dev/null 2>&1; then
                 ZEN_OS_RELEASE=$(system_profiler SPSoftwareDataType | grep "System Version" | awk '{print $4}')
-                ZEN_OS_DISTRO_CODENAME="macOS"
             else
                 ZEN_OS_RELEASE="unknown"
-                ZEN_OS_DISTRO_CODENAME="macOS"
             fi
         fi
     else
-        zen_echo_warning "Running on unknown OS named ${ZEN_OS_NAME} " \
-                         "- zenbal should work fine on most Unix-like systems " \
+        zen_echo_warning "Running on unknown OS named ${ZEN_OS_NAME}. " \
+                         "zenbal should work fine on most Unix-like systems " \
                          "except installing packages!"
 	fi
 }
 
-# Display information about zenbal defined OS variables
-_zen_os_display() {
-    zen_echo_h2 "zenbal Operating System Information:"
-    echo ""
-    zen_echo_green "✓ Running on $ZEN_OS_NAME ($ZEN_OS_KERNEL kernel, $ZEN_OS_MACHINE_HARDWARE_NAME architecture)."
-    zen_echo_green "Distribution: $ZEN_OS_DISTRO_CODENAME ($ZEN_OS_DISTRO_ID v$ZEN_OS_RELEASE) based on $ZEN_OS_BASED_ON."
-    zen_echo_green "Package management will use $ZEN_OS_BASED_ON compatible tools."
-    echo ""
-}
-
-##====================================================
-## zen_update
-##====================================================
-
-# Update zenbal from GitHub repository if ZEN_AUTO_UPDATE is enabled
-_zen_update_from_github() {
-    local l_github_url="https://raw.githubusercontent.com/ergenius/zenbal/main/zenbal"
-    local l_script_path="${BASH_SOURCE[0]}"
-    local l_backup_path="${l_script_path}.bak"
-    
-    # Check if ZEN_AUTO_UPDATE is set to true or 1
-    if [[ "${ZEN_AUTO_UPDATE:-}" == "true" || "${ZEN_AUTO_UPDATE:-}" == "1" ]]; then
-        zen_echo_h3 "ZEN_AUTO_UPDATE is enabled. Checking for updates..."
-
-        # Create a backup of the current file
-        if cp "$l_script_path" "$l_backup_path"; then
-            zen_echo_green "Backup created at: $l_backup_path"
-        else
-            zen_echo_error "Failed to create backup. Aborting update."
-            return 1
-        fi
-        
-        # Download the latest version from GitHub
-        zen_echo_h3 "Downloading latest version from GitHub..."
-        if zen_net_download_url "$l_github_url" "$l_script_path"; then
-            zen_echo_success "Successfully updated zenbal from GitHub repository!"
-            zen_echo_green "Previous version backed up to: $l_backup_path"
-            
-            # Make the updated file executable
-            chmod +x "$l_script_path"
-            
-            zen_echo_warning "Note: Please restart your script to use the updated version."
-        else
-            zen_echo_error "Failed to download update. Restoring from backup..."
-            if mv "$l_backup_path" "$l_script_path"; then
-                zen_echo_green "Original file restored successfully."
-            else
-                zen_echo_panic "Failed to restore backup! Please check $l_backup_path manually."
-            fi
-            return 1
-        fi
-    else
-        zen_echo_h3 "ZEN_AUTO_UPDATE is disabled. Skipping update check."
-        zen_echo_yellow "To enable auto-update, set ZEN_AUTO_UPDATE=true or ZEN_AUTO_UPDATE=1"
-    fi
-}
-
-# Check for updates on library load if ZEN_AUTO_UPDATE is set
-_zen_update_check_on_load() {
-    if [[ "${ZEN_AUTO_UPDATE:-}" == "true" || "${ZEN_AUTO_UPDATE:-}" == "1" ]]; then
-        _zen_update_from_github
-    fi
-}
-
 ######################################################
 
+# Display comprehensive system environment information
+# Shows detected OS, kernel, architecture, distribution details and package management info
+# Globals:
+#   Uses all ZEN_OS_* global variables set by _zen_os_detect
+# Arguments:
+#   None
+# Outputs:
+#   Formatted environment information to stdout
+# Returns:
+#   None
+zen_environment_info() {
+    zen_echo_h1 "zenbal environment information:"
+    echo ""
+    zen_echo_success "Running on $ZEN_OS_NAME ($ZEN_OS_KERNEL kernel, $ZEN_OS_MACHINE_HARDWARE_NAME architecture)."
+    zen_echo_success "Distribution: $ZEN_OS_DISTRO_CODENAME ($ZEN_OS_DISTRO_ID v$ZEN_OS_RELEASE) based on $ZEN_OS_BASED_ON."
+    zen_echo_success "Package management will use $ZEN_OS_BASED_ON compatible tools."
+    echo ""
+}
+
+# Initialize zenbal library
+# Performs OS detection, package mapping setup, update checks, and shows environment info
+# This function is automatically called when zenbal is sourced
+# Globals:
+#   Sets up all ZEN_OS_* variables and package mappings
+# Arguments:
+#   None
+# Outputs:
+#   Environment information display
+# Returns:
+#   None
 _zen_init() {
     _zen_os_detect
-    _zen_os_display
     _zen_pkg_init
-    _zen_update_check_on_load
+    zen_environment_info
 }
 
 _zen_init
