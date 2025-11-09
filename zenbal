@@ -98,6 +98,11 @@ zen_echo_h3() {
   echo -e "\n${ZEN_SC_FG_ITALIC}${1}${ZEN_SC_RESET_ALL}"
 }
 
+# Print info message
+zen_echo_info() {
+    echo -e "$*"
+}
+
 # Print progress message
 zen_echo_progress() {
     zen_echo_cyan "\n⏳ $*"

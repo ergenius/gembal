@@ -228,6 +228,7 @@ Beautiful terminal output with colors, icons, and formatting:
 - `zen_echo_red()`, `zen_echo_green()`, `zen_echo_yellow()`, `zen_echo_blue()`, `zen_echo_magenta()`, `zen_echo_cyan()` - Colored text output
 - `zen_echo_h1()`, `zen_echo_h2()`, `zen_echo_h3()` - Header formatting with styles (inverted, underlined, italic)
 - `zen_echo_success()`, `zen_echo_error()`, `zen_echo_warning()`, `zen_echo_progress()` - Status messages with icons
+- `zen_echo_info()` - Print informational message
 - `zen_echo_panic()` - Error message with script termination
 - `zen_echo_repeat()` - Repeat string multiple times
 
